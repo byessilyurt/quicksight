@@ -119,10 +119,12 @@ class QuickSightTooltip {
 
   async getSummary(videoId) {
     // Check cache first
-    const cached = window.QuickSightCache?.get(`summary_${videoId}`);
+    const cacheKey = `summary_${videoId}`;
+    const cached = window.QuickSightCache?.get(cacheKey);
     if (cached) {
       console.log('Using cached summary for:', videoId);
-      return cached;
+      // Return the cached value directly (it should already be the summary object)
+      return cached.value || cached;
     }
 
     console.log('Requesting summary for video:', videoId);
@@ -144,7 +146,7 @@ class QuickSightTooltip {
         if (response.success) {
           // Cache the result
           if (window.QuickSightCache) {
-            window.QuickSightCache.set(`summary_${videoId}`, response.data);
+            window.QuickSightCache.set(cacheKey, response.data);
           }
           resolve(response.data);
         } else {
@@ -157,17 +159,22 @@ class QuickSightTooltip {
   displaySummary(summary, position) {
     if (!this.isVisible || !summary) return;
 
+    console.log('Displaying summary:', summary);
+
     const tooltipContent = this.tooltip.querySelector('.quicksight-summary');
-    const bullets = summary.quickSummary?.bullets || [];
-    const quote = summary.quickSummary?.quote || '';
-    const confidence = summary.quickSummary?.confidence || 0;
+    
+    // Handle both direct summary objects and nested structures
+    const quickSummary = summary.quickSummary || summary;
+    const bullets = quickSummary.bullets || [];
+    const quote = quickSummary.quote || '';
+    const confidence = quickSummary.confidence || 0;
 
     // Update metadata
     const metadata = tooltipContent.querySelector('.summary-metadata');
     const duration = metadata.querySelector('.video-duration');
     const confidenceIndicator = metadata.querySelector('.confidence-indicator');
     
-    duration.textContent = this.currentTarget.dataset.duration || '';
+    duration.textContent = quickSummary.duration || this.currentTarget.dataset.duration || '';
     confidenceIndicator.textContent = `${Math.round(confidence * 100)}% confidence`;
     confidenceIndicator.className = `confidence-indicator ${this.getConfidenceClass(confidence)}`;
 
@@ -193,7 +200,7 @@ class QuickSightTooltip {
     }
 
     // Store detailed summary for modal
-    this.currentDetailedSummary = summary.detailedSummary;
+    this.currentDetailedSummary = summary.detailedSummary || summary;
 
     // Show summary, hide loading
     this.tooltip.querySelector('.quicksight-loading').style.display = 'none';

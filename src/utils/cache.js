@@ -10,9 +10,20 @@ class QuickSightCache {
 
   get(key) {
     if (this.cache.has(key)) {
+      const item = this.cache.get(key);
+      
+      // Check if item has expired
+      if (Date.now() - item.timestamp > item.ttl) {
+        this.cache.delete(key);
+        this.accessTimes.delete(key);
+        this.missCount++;
+        return null;
+      }
+      
       this.accessTimes.set(key, Date.now());
+      item.accessCount++;
       this.hitCount++;
-      return this.cache.get(key);
+      return item.value;
     }
     this.missCount++;
     return null;

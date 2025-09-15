@@ -90,9 +90,13 @@ class QuickSightBackground {
   async getVideoSummary(videoId) {
     // Check cache first
     const cacheKey = `summary_${videoId}`;
-    if (this.cache.has(cacheKey)) {
-      return this.cache.get(cacheKey);
+    const cached = this.cache.get(cacheKey);
+    if (cached) {
+      console.log('Background: Using cached summary for', videoId);
+      return cached;
     }
+
+    console.log('Background: Generating new summary for', videoId);
 
     try {
       // Get transcript
@@ -108,6 +112,7 @@ class QuickSightBackground {
       // Cache the result
       this.cache.set(cacheKey, summary);
       
+      console.log('Background: Generated and cached summary for', videoId);
       return summary;
     } catch (error) {
       console.error('Failed to get video summary:', error);
