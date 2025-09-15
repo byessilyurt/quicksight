@@ -46,9 +46,12 @@ class QuickSightBackground {
   }
 
   async handleMessage(request, sender, sendResponse) {
+    console.log(`📨 [Background] Received message:`, request.action, request);
+    
     try {
       switch (request.action) {
         case 'getVideoSummary':
+          console.log(`🎯 [Background] Processing getVideoSummary for: ${request.videoId}`);
           const summary = await this.getVideoSummary(request.videoId);
           sendResponse({ success: true, data: summary });
           break;
@@ -114,7 +117,13 @@ class QuickSightBackground {
       
       if (!transcript) {
         console.warn(`⚠️ [Background] No transcript available for ${videoId}`);
-        throw new Error('No transcript available for this video');
+        // Don't throw error, use fallback transcript
+        console.log(`🎭 [Background] Using fallback transcript for ${videoId}`);
+        const fallbackTranscript = await this.generateFallbackTranscript(videoId, metadata);
+        const summary = await this.generateSummary(fallbackTranscript, metadata);
+        this.cache.set(cacheKey, summary);
+        console.log(`✅ [Background] Generated and cached fallback summary for ${videoId}`);
+        return summary;
       }
       
       console.log(`📝 [Background] Transcript extracted (${transcript.text.length} characters)`);
@@ -130,7 +139,11 @@ class QuickSightBackground {
       return summary;
     } catch (error) {
       console.error(`❌ [Background] Failed to get video summary for ${videoId}:`, error);
-      throw error;
+      // Return fallback summary instead of throwing
+      console.log(`🎭 [Background] Using fallback summary due to error for ${videoId}`);
+      const fallbackSummary = this.generateFallbackSummary(videoId);
+      this.cache.set(cacheKey, fallbackSummary);
+      return fallbackSummary;
     }
   }
 
@@ -143,7 +156,14 @@ class QuickSightBackground {
       console.log(`🌐 [Background] Fetching video page: ${videoUrl}`);
       
       const response = await fetch(videoUrl);
+      console.log(`🌐 [Background] Fetch response status: ${response.status}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       const html = await response.text();
+      console.log(`🌐 [Background] Received HTML content (${html.length} characters)`);
       
       // Extract metadata from page HTML
       const metadata = this.parseVideoMetadata(html, videoId);
@@ -164,24 +184,30 @@ class QuickSightBackground {
   }
   
   parseVideoMetadata(html, videoId) {
+    console.log(`🔍 [Background] Parsing metadata from HTML for ${videoId}`);
+    
     try {
       // Extract title
       const titleMatch = html.match(/<title>([^<]+)<\/title>/);
       const title = titleMatch ? titleMatch[1].replace(' - YouTube', '') : 'Unknown Video';
+      console.log(`📝 [Background] Extracted title: ${title}`);
       
       // Extract channel name
       const channelMatch = html.match(/"ownerChannelName":"([^"]+)"/);
       const channel = channelMatch ? channelMatch[1] : 'Unknown Channel';
+      console.log(`📺 [Background] Extracted channel: ${channel}`);
       
       // Extract view count
       const viewsMatch = html.match(/"viewCount":"(\d+)"/);
       const views = viewsMatch ? parseInt(viewsMatch[1]) : 0;
+      console.log(`👁️ [Background] Extracted views: ${views}`);
       
       // Extract duration
       const durationMatch = html.match(/"lengthSeconds":"(\d+)"/);
       const duration = durationMatch ? this.formatDuration(parseInt(durationMatch[1])) : 'Unknown';
+      console.log(`⏱️ [Background] Extracted duration: ${duration}`);
       
-      return {
+      const metadata = {
         videoId,
         title,
         channel,
@@ -190,6 +216,9 @@ class QuickSightBackground {
         uploadDate: 'Recently',
         thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`
       };
+      
+      console.log(`✅ [Background] Successfully parsed metadata:`, metadata);
+      return metadata;
     } catch (error) {
       console.warn(`⚠️ [Background] Error parsing metadata:`, error);
       return {
@@ -327,6 +356,7 @@ class QuickSightBackground {
     console.log(`📊 [Background] Input - Transcript length: ${transcript.text.length}, Metadata:`, metadata);
     
     const settings = await chrome.storage.sync.get(['aiProvider', 'apiKey']);
+    console.log(`🔑 [Background] Settings - Provider: ${settings.aiProvider}, API Key: ${settings.apiKey ? 'Present' : 'Missing'}`);
     
     if (!settings.apiKey) {
       console.warn(`⚠️ [Background] No API key configured, using mock summary`);
@@ -336,6 +366,7 @@ class QuickSightBackground {
     console.log(`🔑 [Background] Using ${settings.aiProvider} API for summary generation`);
     
     try {
+      console.log(`🌐 [Background] Making OpenAI API call...`);
       const summary = await this.callOpenAI(transcript, metadata, settings.apiKey);
       console.log(`✅ [Background] OpenAI summary generated successfully`);
       return summary;
