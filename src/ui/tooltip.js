@@ -130,6 +130,7 @@ class QuickSightTooltip {
     }
 
     console.log(`🔄 [Tooltip] Requesting new summary for video: ${videoId}`);
+    console.log(`📤 [Tooltip] Sending message to background script...`);
 
     // Request from background script
     return new Promise((resolve, reject) => {
