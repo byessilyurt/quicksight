@@ -119,25 +119,33 @@ class QuickSightTooltip {
 
   async getSummary(videoId) {
     // Check cache first
-    const cached = window.QuickSightCache.get(`summary_${videoId}`);
+    const cached = window.QuickSightCache?.get(`summary_${videoId}`);
     if (cached) {
+      console.log('Using cached summary for:', videoId);
       return cached;
     }
+
+    console.log('Requesting summary for video:', videoId);
 
     // Request from background script
     return new Promise((resolve, reject) => {
       chrome.runtime.sendMessage({
-        action: 'getVideoSummary',
+        action: 'getVideoSummary', 
         videoId: videoId
       }, (response) => {
         if (chrome.runtime.lastError) {
+          console.error('Chrome runtime error:', chrome.runtime.lastError);
           reject(new Error(chrome.runtime.lastError.message));
           return;
         }
 
+        console.log('Background script response:', response);
+
         if (response.success) {
           // Cache the result
-          window.QuickSightCache.set(`summary_${videoId}`, response.data);
+          if (window.QuickSightCache) {
+            window.QuickSightCache.set(`summary_${videoId}`, response.data);
+          }
           resolve(response.data);
         } else {
           reject(new Error(response.error || 'Failed to generate summary'));

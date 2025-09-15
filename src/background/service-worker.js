@@ -46,14 +46,19 @@ class QuickSightBackground {
   async handleMessage(request, sender, sendResponse) {
     try {
       switch (request.action) {
+        case 'getVideoSummary':
+          const summary = await this.getVideoSummary(request.videoId);
+          sendResponse({ success: true, data: summary });
+          break;
+
         case 'getTranscript':
           const transcript = await this.getVideoTranscript(request.videoId);
           sendResponse({ success: true, data: transcript });
           break;
 
         case 'generateSummary':
-          const summary = await this.generateSummary(request.transcript, request.metadata);
-          sendResponse({ success: true, data: summary });
+          const generatedSummary = await this.generateSummary(request.transcript, request.metadata);
+          sendResponse({ success: true, data: generatedSummary });
           break;
 
         case 'cacheSet':
@@ -66,12 +71,47 @@ class QuickSightBackground {
           sendResponse({ success: true, data: cachedValue });
           break;
 
+        case 'trackEvent':
+          // Handle analytics tracking
+          console.log('Event tracked:', request.event, request.data);
+          sendResponse({ success: true });
+          break;
+
         default:
+          console.warn('Unknown action:', request.action);
           sendResponse({ success: false, error: 'Unknown action' });
       }
     } catch (error) {
       console.error('Background script error:', error);
       sendResponse({ success: false, error: error.message });
+    }
+  }
+
+  async getVideoSummary(videoId) {
+    // Check cache first
+    const cacheKey = `summary_${videoId}`;
+    if (this.cache.has(cacheKey)) {
+      return this.cache.get(cacheKey);
+    }
+
+    try {
+      // Get transcript
+      const transcript = await this.getVideoTranscript(videoId);
+      
+      if (!transcript) {
+        throw new Error('No transcript available for this video');
+      }
+
+      // Generate summary
+      const summary = await this.generateSummary(transcript, { videoId });
+      
+      // Cache the result
+      this.cache.set(cacheKey, summary);
+      
+      return summary;
+    } catch (error) {
+      console.error('Failed to get video summary:', error);
+      throw error;
     }
   }
 

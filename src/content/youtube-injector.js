@@ -282,6 +282,7 @@ class YouTubeInjector {
 
   showTooltip(element, videoId, position) {
     if (this.tooltip) {
+      console.log('Showing tooltip for video:', videoId);
       this.tooltip.show(element, videoId, position);
     }
   }
