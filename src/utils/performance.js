@@ -222,10 +222,20 @@ class PerformanceOptimizer {
   }
 
   recordCacheHit() {
+    console.log(`📊 [Performance] Recording cache HIT`);
     this.performanceMetrics.cacheHits++;
     this.performanceMetrics.totalRequests++;
     this.performanceMetrics.cacheHitRate = 
       this.performanceMetrics.cacheHits / this.performanceMetrics.totalRequests;
+    console.log(`📊 [Performance] Cache hit rate: ${(this.performanceMetrics.cacheHitRate * 100).toFixed(1)}%`);
+  }
+
+  recordCacheMiss() {
+    console.log(`📊 [Performance] Recording cache MISS`);
+    this.performanceMetrics.totalRequests++;
+    this.performanceMetrics.cacheHitRate = 
+      this.performanceMetrics.cacheHits / this.performanceMetrics.totalRequests;
+    console.log(`📊 [Performance] Cache hit rate: ${(this.performanceMetrics.cacheHitRate * 100).toFixed(1)}%`);
   }
 
   recordPreloadTime(time) {

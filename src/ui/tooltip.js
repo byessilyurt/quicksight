@@ -165,6 +165,17 @@ class QuickSightTooltip {
     });
   }
 
+  updateCacheStats(isHit) {
+    // Update performance metrics for cache hit/miss
+    if (window.QuickSightPerformance) {
+      if (isHit) {
+        window.QuickSightPerformance.recordCacheHit();
+      } else {
+        window.QuickSightPerformance.recordCacheMiss();
+      }
+    }
+  }
+
   async testOpenAI() {
     console.log('🧪 [Tooltip] Testing OpenAI connection...');
     chrome.runtime.sendMessage({

@@ -47,6 +47,8 @@ class QuickSightCache {
   }
 
   evictLRU() {
+    console.log(`🗑️ [Cache] Starting LRU eviction...`);
+    
     let oldestKey = null;
     let oldestTime = Date.now();
 
@@ -58,8 +60,11 @@ class QuickSightCache {
     }
 
     if (oldestKey) {
+      console.log(`🗑️ [Cache] Evicting LRU item with key: ${oldestKey}`);
       this.cache.delete(oldestKey);
       this.accessTimes.delete(oldestKey);
+    } else {
+      console.warn(`⚠️ [Cache] No items to evict!`);
     }
   }
 

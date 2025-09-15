@@ -47,11 +47,34 @@ class QuickSightBackground {
   }
 
   async handleMessage(request, sender, sendResponse) {
+    const startTime = Date.now();
+    console.log(`📨 [Background] === MESSAGE RECEIVED ===`);
+    console.log(`📨 [Background] Action: ${request.action}`);
+    console.log(`📨 [Background] Video ID: ${request.videoId || 'N/A'}`);
+    
     try {
       switch (request.action) {
         case 'getVideoSummary':
           console.log('🎯 [Background] Processing getVideoSummary for:', request.videoId);
+          
+          // Check if we have this in our background cache first
+          const cacheKey = `bg_summary_${request.videoId}`;
+          if (this.cache.has(cacheKey)) {
+            console.log(`💾 [Background] Using background cache for: ${request.videoId}`);
+            const cached = this.cache.get(cacheKey);
+            sendResponse({ success: true, data: cached, cached: true });
+            return;
+          }
+          
           const summary = await this.testVideoProcessing(request.videoId);
+          
+          // Cache in background for faster subsequent requests
+          this.cache.set(cacheKey, summary);
+          console.log(`💾 [Background] Cached summary in background cache`);
+          
+          const processingTime = Date.now() - startTime;
+          console.log(`⏱️ [Background] Total processing time: ${processingTime}ms`);
+          
           sendResponse({ success: true, data: summary });
           break;
 
