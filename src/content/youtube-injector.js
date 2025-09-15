@@ -167,6 +167,8 @@ class YouTubeInjector {
   }
 
   extractVideoId(element) {
+    console.log(`🔍 [Content] Extracting video ID from element`);
+    
     // Try multiple methods to extract video ID
     const methods = [
       // From thumbnail link
@@ -174,15 +176,21 @@ class YouTubeInjector {
         const link = element.querySelector('a[href*="/watch?v="]');
         if (link) {
           const url = new URL(link.href, 'https://youtube.com');
-          return url.searchParams.get('v');
+          const videoId = url.searchParams.get('v');
+          console.log(`🔗 [Content] Found video ID from link: ${videoId}`);
+          return videoId;
         }
         return null;
       },
       
       // From data attributes
       () => {
-        return element.dataset.contextItemId || 
+        const videoId = element.dataset.contextItemId || 
                element.querySelector('[data-context-item-id]')?.dataset.contextItemId;
+        if (videoId) {
+          console.log(`📊 [Content] Found video ID from data attributes: ${videoId}`);
+        }
+        return videoId;
       },
       
       // From thumbnail image
@@ -190,7 +198,11 @@ class YouTubeInjector {
         const img = element.querySelector('img[src*="vi/"]');
         if (img) {
           const match = img.src.match(/vi\/([^\/]+)/);
-          return match ? match[1] : null;
+          const videoId = match ? match[1] : null;
+          if (videoId) {
+            console.log(`🖼️ [Content] Found video ID from thumbnail: ${videoId}`);
+          }
+          return videoId;
         }
         return null;
       }
@@ -200,17 +212,21 @@ class YouTubeInjector {
       try {
         const videoId = method();
         if (videoId && videoId.length === 11) {
+          console.log(`✅ [Content] Successfully extracted video ID: ${videoId}`);
           return videoId;
         }
       } catch (error) {
-        console.warn('Video ID extraction method failed:', error);
+        console.warn(`⚠️ [Content] Video ID extraction method failed:`, error);
       }
     }
 
+    console.warn(`❌ [Content] Could not extract video ID from element`);
     return null;
   }
 
   extractAndStoreMetadata(element, videoId) {
+    console.log(`📊 [Content] Extracting metadata for video ${videoId}`);
+    
     const metadata = {
       title: this.getTextContent(element, '#video-title, .video-title, h3 a'),
       channel: this.getTextContent(element, '#channel-name, .channel-name, #owner-name'),
@@ -219,6 +235,8 @@ class YouTubeInjector {
       uploadDate: this.getTextContent(element, '#metadata-line span:last-child, .video-upload-date'),
       thumbnail: element.querySelector('img')?.src
     };
+
+    console.log(`📊 [Content] Extracted metadata for ${videoId}:`, metadata);
 
     // Store metadata on element for quick access
     Object.keys(metadata).forEach(key => {

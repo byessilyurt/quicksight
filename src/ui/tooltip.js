@@ -118,16 +118,18 @@ class QuickSightTooltip {
   }
 
   async getSummary(videoId) {
+    console.log(`🎯 [Tooltip] Getting summary for video: ${videoId}`);
+    
     // Check cache first
     const cacheKey = `summary_${videoId}`;
     const cached = window.QuickSightCache?.get(cacheKey);
     if (cached) {
-      console.log('Using cached summary for:', videoId);
+      console.log(`💾 [Tooltip] Using cached summary for: ${videoId}`);
       // Return the cached value directly (it should already be the summary object)
       return cached.value || cached;
     }
 
-    console.log('Requesting summary for video:', videoId);
+    console.log(`🔄 [Tooltip] Requesting new summary for video: ${videoId}`);
 
     // Request from background script
     return new Promise((resolve, reject) => {
@@ -136,20 +138,22 @@ class QuickSightTooltip {
         videoId: videoId
       }, (response) => {
         if (chrome.runtime.lastError) {
-          console.error('Chrome runtime error:', chrome.runtime.lastError);
+          console.error(`❌ [Tooltip] Chrome runtime error:`, chrome.runtime.lastError);
           reject(new Error(chrome.runtime.lastError.message));
           return;
         }
 
-        console.log('Background script response:', response);
+        console.log(`📨 [Tooltip] Background script response for ${videoId}:`, response);
 
         if (response.success) {
           // Cache the result
           if (window.QuickSightCache) {
+            console.log(`💾 [Tooltip] Caching summary for ${videoId}`);
             window.QuickSightCache.set(cacheKey, response.data);
           }
           resolve(response.data);
         } else {
+          console.error(`❌ [Tooltip] Background script error for ${videoId}:`, response.error);
           reject(new Error(response.error || 'Failed to generate summary'));
         }
       });
@@ -159,7 +163,7 @@ class QuickSightTooltip {
   displaySummary(summary, position) {
     if (!this.isVisible || !summary) return;
 
-    console.log('Displaying summary:', summary);
+    console.log(`🎨 [Tooltip] Displaying summary:`, summary);
 
     const tooltipContent = this.tooltip.querySelector('.quicksight-summary');
     
@@ -169,6 +173,7 @@ class QuickSightTooltip {
     const quote = quickSummary.quote || '';
     const confidence = quickSummary.confidence || 0;
 
+    console.log(`📊 [Tooltip] Summary data - Bullets: ${bullets.length}, Quote: ${quote.length} chars, Confidence: ${Math.round(confidence * 100)}%`);
     // Update metadata
     const metadata = tooltipContent.querySelector('.summary-metadata');
     const duration = metadata.querySelector('.video-duration');
