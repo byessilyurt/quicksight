@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QuickSight Settings</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <header class="popup-header">
+      <div class="logo-section">
+        <div class="logo">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M2 3l6 6 4-4 8 8v7H2z"/>
+            <path d="M10 9l4-4"/>
+          </svg>
+        </div>
+        <div class="title-section">
+          <h1>QuickSight</h1>
+          <p class="subtitle">AI Video Summaries</p>
+        </div>
+      </div>
+    </header>
+
+    <main class="popup-content">
+      <!-- Status Section -->
+      <section class="status-section">
+        <div class="status-item">
+          <div class="status-info">
+            <h3>Extension Status</h3>
+            <p class="status-description">Enable or disable video summaries</p>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="enabledToggle" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </section>
+
+      <!-- AI Configuration -->
+      <section class="config-section">
+        <h2 class="section-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7v10c0 5.55 3.84 10 10 10s10-4.45 10-10V7L12 2z"/>
+          </svg>
+          AI Configuration
+        </h2>
+        
+        <div class="form-group">
+          <label for="aiProvider">AI Provider</label>
+          <select id="aiProvider" class="form-control">
+            <option value="openai">OpenAI (GPT-4)</option>
+            <option value="claude" disabled>Anthropic Claude (Coming Soon)</option>
+            <option value="gemini" disabled>Google Gemini (Coming Soon)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="apiKey">
+            API Key
+            <span class="help-icon" title="Your API key is stored securely and never shared">?</span>
+          </label>
+          <div class="input-group">
+            <input type="password" id="apiKey" class="form-control" placeholder="Enter your OpenAI API key">
+            <button type="button" id="toggleApiKey" class="input-button" aria-label="Toggle API key visibility">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+          <p class="form-help">
+            <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">Get your OpenAI API key</a>
+          </p>
+        </div>
+      </section>
+
+      <!-- Performance Settings -->
+      <section class="config-section">
+        <h2 class="section-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 6v6l4 2"/>
+          </svg>
+          Performance
+        </h2>
+
+        <div class="form-group">
+          <label for="hoverDelay">Hover Delay (ms)</label>
+          <div class="range-group">
+            <input type="range" id="hoverDelay" min="100" max="1000" step="50" value="200" class="range-control">
+            <span id="hoverDelayValue" class="range-value">200ms</span>
+          </div>
+          <p class="form-help">Time to wait before showing summary tooltip</p>
+        </div>
+
+        <div class="form-group">
+          <label for="maxCacheSize">Cache Size</label>
+          <div class="range-group">
+            <input type="range" id="maxCacheSize" min="50" max="500" step="25" value="100" class="range-control">
+            <span id="maxCacheSizeValue" class="range-value">100</span>
+          </div>
+          <p class="form-help">Maximum number of summaries to cache</p>
+        </div>
+
+        <div class="form-group">
+          <label for="preloadCount">Preload Count</label>
+          <div class="range-group">
+            <input type="range" id="preloadCount" min="1" max="10" step="1" value="3" class="range-control">
+            <span id="preloadCountValue" class="range-value">3</span>
+          </div>
+          <p class="form-help">Number of videos to preload summaries for</p>
+        </div>
+      </section>
+
+      <!-- Statistics -->
+      <section class="stats-section">
+        <h2 class="section-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 3v18h18"/>
+            <path d="M18 17l-5-5-5 5-5-5"/>
+          </svg>
+          Statistics
+        </h2>
+
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-value" id="totalSummaries">0</div>
+            <div class="stat-label">Summaries Generated</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="cacheHitRate">0%</div>
+            <div class="stat-label">Cache Hit Rate</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="avgResponseTime">0ms</div>
+            <div class="stat-label">Avg Response Time</div>
+          </div>
+        </div>
+
+        <div class="stats-actions">
+          <button type="button" id="clearCache" class="btn btn-secondary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 6h18l-1.5 15H4.5L3 6z"/>
+              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            </svg>
+            Clear Cache
+          </button>
+          <button type="button" id="exportData" class="btn btn-secondary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7,10 12,15 17,10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Export Data
+          </button>
+        </div>
+      </section>
+
+      <!-- Saved Summaries -->
+      <section class="saved-section">
+        <h2 class="section-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+          </svg>
+          Recent Summaries
+        </h2>
+        
+        <div id="savedSummariesList" class="saved-list">
+          <!-- Populated dynamically -->
+        </div>
+      </section>
+    </main>
+
+    <footer class="popup-footer">
+      <div class="footer-links">
+        <a href="#" id="openHelp">Help & FAQ</a>
+        <a href="#" id="reportIssue">Report Issue</a>
+      </div>
+      <div class="version">v1.0.0</div>
+    </footer>
+  </div>
+
+  <!-- Status Toast -->
+  <div id="statusToast" class="status-toast">
+    <div class="toast-content">
+      <span id="toastMessage"></span>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
