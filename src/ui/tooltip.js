@@ -119,6 +119,7 @@ class QuickSightTooltip {
 
   async getSummary(videoId) {
     console.log(`🎯 [Tooltip] Getting summary for video: ${videoId}`);
+    console.log(`🔍 [Tooltip] === STARTING VIDEO ANALYSIS ===`);
     
     // Check cache first
     const cacheKey = `summary_${videoId}`;
@@ -131,6 +132,9 @@ class QuickSightTooltip {
 
     console.log(`🔄 [Tooltip] Requesting new summary for video: ${videoId}`);
     console.log(`📤 [Tooltip] Sending message to background script...`);
+
+    // Add a test button for OpenAI (temporary)
+    this.testOpenAI();
 
     // Request from background script
     return new Promise((resolve, reject) => {
@@ -158,6 +162,19 @@ class QuickSightTooltip {
           reject(new Error(response.error || 'Failed to generate summary'));
         }
       });
+    });
+  }
+
+  async testOpenAI() {
+    console.log('🧪 [Tooltip] Testing OpenAI connection...');
+    chrome.runtime.sendMessage({
+      action: 'testOpenAI'
+    }, (response) => {
+      if (response.success) {
+        console.log('✅ [Tooltip] OpenAI test result:', response.data);
+      } else {
+        console.error('❌ [Tooltip] OpenAI test failed:', response.error);
+      }
     });
   }
 
