@@ -3,6 +3,7 @@ class VideoPreloader {
   constructor() {
     this.cache = new Map();
     this.processingQueue = new Set();
+    this.uiManager = null;
     this.intersectionObserver = null;
     this.requestQueue = [];
     this.maxConcurrentRequests = 3;
@@ -13,9 +14,32 @@ class VideoPreloader {
 
   init() {
     console.log('🚀 [Preloader] Initializing aggressive preloading system');
+    
+    // Wait for UI manager to be available
+    this.waitForUIManager();
+    
     this.setupIntersectionObserver();
     this.startInitialPreload();
     this.setupScrollHandler();
+  }
+
+  waitForUIManager() {
+    const checkUIManager = () => {
+      if (window.quickSightUIManager) {
+        this.uiManager = window.quickSightUIManager;
+        console.log('🚀 [Preloader] UI Manager connected');
+      } else {
+        setTimeout(checkUIManager, 100);
+      }
+    };
+    checkUIManager();
+  }
+
+  scanForNewVideos() {
+    console.log('🚀 [Preloader] Scanning for new videos after UI injection');
+    setTimeout(() => {
+      this.scanAndPreloadVisibleVideos();
+    }, 100);
   }
 
   setupIntersectionObserver() {
@@ -180,6 +204,11 @@ class VideoPreloader {
   async processVideoRequest(request) {
     const startTime = Date.now();
     console.log(`⚡ [Preloader] Processing video: ${request.videoId}`);
+    
+    // Notify UI that we're loading
+    if (this.uiManager) {
+      this.uiManager.notifyVideoLoading(request.videoId);
+    }
 
     try {
       // Get summary from background script with fast AI model
@@ -210,13 +239,28 @@ class VideoPreloader {
         const processingTime = Date.now() - startTime;
         console.log(`✅ [Preloader] Cached summary for ${request.videoId} in ${processingTime}ms`);
 
+        // Notify UI that summary is ready
+        if (this.uiManager) {
+          this.uiManager.notifyVideoReady(request.videoId, response.data);
+        }
+
         // Manage cache size
         this.manageCacheSize();
       } else {
         console.warn(`⚠️ [Preloader] Failed to get summary for ${request.videoId}:`, response.error);
+        
+        // Notify UI of error
+        if (this.uiManager) {
+          this.uiManager.notifyVideoError(request.videoId);
+        }
       }
     } catch (error) {
       console.error(`❌ [Preloader] Error processing ${request.videoId}:`, error);
+      
+      // Notify UI of error
+      if (this.uiManager) {
+        this.uiManager.notifyVideoError(request.videoId);
+      }
     }
   }
 

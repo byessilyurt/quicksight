@@ -96,6 +96,27 @@ class QuickSightBackground {
           sendResponse({ success: true, data: summary });
           break;
 
+        case 'getExtendedSummary':
+          console.log(`🎯 [Background] Processing EXTENDED summary for: ${request.videoId}`);
+          
+          // Check cache first
+          const extendedCacheKey = `bg_extended_${request.videoId}`;
+          if (this.cache.has(extendedCacheKey)) {
+            console.log(`💾 [Background] Using cached extended summary for: ${request.videoId}`);
+            const cached = this.cache.get(extendedCacheKey);
+            sendResponse({ success: true, data: cached, cached: true });
+            return;
+          }
+          
+          // Generate extended summary
+          const extendedSummary = await this.processVideoSummary(request.videoId, false, true);
+          
+          // Cache extended summary
+          this.addToCache(extendedCacheKey, extendedSummary);
+          
+          sendResponse({ success: true, data: extendedSummary });
+          break;
+
         case 'testOpenAI':
           console.log('🤖 [Background] Testing OpenAI API connection');
           const testResult = await this.testOpenAIConnection();
@@ -140,8 +161,9 @@ class QuickSightBackground {
     
     return cached.data;
   }
-  async processVideoSummary(videoId, fastMode = false) {
-    console.log(`🔍 [Background] Processing video summary (${fastMode ? 'FAST' : 'NORMAL'}): ${videoId}`);
+  async processVideoSummary(videoId, fastMode = false, extendedMode = false) {
+    const mode = extendedMode ? 'EXTENDED' : fastMode ? 'FAST' : 'NORMAL';
+    console.log(`🔍 [Background] Processing video summary (${mode}): ${videoId}`);
 
     try {
       // Step 1: Extract video metadata
@@ -154,34 +176,47 @@ class QuickSightBackground {
       const openaiTest = await this.testOpenAIConnection();
 
       // Step 4: Generate summary based on available data
-      console.log(`🎯 [Background] Generating ${fastMode ? 'fast' : 'detailed'} AI summary...`);
+      console.log(`🎯 [Background] Generating ${mode.toLowerCase()} AI summary...`);
       
       if (transcript.available && openaiTest.success) {
-        return await this.generateRealSummary(transcript, metadata, videoId, fastMode);
+        return await this.generateRealSummary(transcript, metadata, videoId, fastMode, extendedMode);
       } else if (transcript.available) {
-        return this.generateEnhancedMockSummary(transcript, metadata, videoId);
+        return this.generateEnhancedMockSummary(transcript, metadata, videoId, extendedMode);
       } else {
-        return this.generateBasicMockSummary(metadata, videoId);
+        return this.generateBasicMockSummary(metadata, videoId, extendedMode);
       }
     } catch (error) {
       console.error('❌ [Background] Video processing failed:', error);
-      return this.generateErrorSummary(error.message, videoId);
+      return this.generateErrorSummary(error.message, videoId, extendedMode);
     }
   }
 
   // Generate real AI summary using OpenAI
-  async generateRealSummary(transcript, metadata, videoId, fastMode = false) {
-    console.log(`🤖 [Background] Generating ${fastMode ? 'FAST' : 'DETAILED'} AI summary`);
+  async generateRealSummary(transcript, metadata, videoId, fastMode = false, extendedMode = false) {
+    const mode = extendedMode ? 'EXTENDED' : fastMode ? 'FAST' : 'DETAILED';
+    console.log(`🤖 [Background] Generating ${mode} AI summary`);
     
     try {
       const settings = await chrome.storage.sync.get(['apiKey']);
       
       // Use different prompts for fast vs detailed mode
-      const prompt = fastMode ? 
-        this.getFastModePrompt(transcript, metadata) : 
-        this.getDetailedModePrompt(transcript, metadata);
+      let prompt, maxTokens, model;
+      
+      if (extendedMode) {
+        prompt = this.getExtendedModePrompt(transcript, metadata);
+        maxTokens = 600;
+        model = 'gpt-4o'; // Use full GPT-4 for extended summaries
+      } else if (fastMode) {
+        prompt = this.getFastModePrompt(transcript, metadata);
+        maxTokens = 120;
+        model = 'gpt-4o-mini';
+      } else {
+        prompt = this.getDetailedModePrompt(transcript, metadata);
+        maxTokens = 120;
+        model = 'gpt-4o-mini';
+      }
 
-      console.log(`🌐 [Background] Sending ${fastMode ? 'fast' : 'detailed'} request to OpenAI...`);
+      console.log(`🌐 [Background] Sending ${mode.toLowerCase()} request to OpenAI (${model})...`);
       
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -190,17 +225,19 @@ class QuickSightBackground {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: fastMode ? 'gpt-4o-mini' : 'gpt-4o-mini', // Use fast model for both for now
+          model: model,
           messages: [
             { 
               role: 'system', 
-              content: fastMode ? 
+              content: extendedMode ?
+                'You are an expert video content analyst. Create comprehensive, detailed summaries with rich insights and analysis.' :
+                fastMode ? 
                 'You are a speed-optimized video summarizer. Create ultra-concise summaries in under 30 tokens.' :
                 'You are an expert video content analyst. Create accurate, engaging summaries.'
             },
             { role: 'user', content: prompt }
           ],
-          max_tokens: fastMode ? 150 : 1000, // Much smaller for fast mode
+          max_tokens: maxTokens,
           temperature: 0.3,
           response_format: { type: 'json_object' }
         })
@@ -212,7 +249,8 @@ class QuickSightBackground {
       }
       
       const data = await response.json();
-      console.log(`✅ [Background] OpenAI ${fastMode ? 'fast' : 'detailed'} response received`);
+      console.log(`✅ [Background] OpenAI ${mode.toLowerCase()} response received`);
+      console.log(`💰 [Background] Token usage:`, data.usage);
       
       const content = data.choices[0]?.message?.content;
       if (!content) {
@@ -223,28 +261,28 @@ class QuickSightBackground {
       return summary;
       
     } catch (error) {
-      console.error(`❌ [Background] ${fastMode ? 'Fast' : 'Detailed'} summary generation failed:`, error);
-      return this.generateEnhancedMockSummary(transcript, metadata, videoId);
+      console.error(`❌ [Background] ${mode} summary generation failed:`, error);
+      return this.generateEnhancedMockSummary(transcript, metadata, videoId, extendedMode);
     }
   }
 
   getFastModePrompt(transcript, metadata) {
-    return `Create ultra-fast summary for preloading:
+    return `Create concise but informative summary:
 
 Video: ${metadata.title}
 Channel: ${metadata.channel}
-Transcript: ${transcript.text.substring(0, 1000)}...
+Transcript: ${transcript.text.substring(0, 2000)}...
 
-JSON format (max 30 tokens total):
+JSON format (80-120 tokens total):
 {
   "quickSummary": {
-    "bullets": ["point1", "point2", "point3"],
-    "quote": "key quote",
+    "bullets": ["specific point 1 (15-20 words)", "specific point 2 (15-20 words)", "specific point 3 (15-20 words)"],
+    "quote": "memorable quote or key insight (15-20 words)",
     "confidence": 0.9,
     "duration": "${metadata.duration}"
   },
   "detailedSummary": {
-    "paragraphs": ["brief summary"],
+    "paragraphs": ["brief but informative summary paragraph"],
     "keyTopics": [{"topic": "Main topic", "timestamp": "0:00"}],
     "takeaways": ["key takeaway"]
   }
@@ -252,7 +290,7 @@ JSON format (max 30 tokens total):
   }
 
   getDetailedModePrompt(transcript, metadata) {
-    return `Analyze this YouTube video and create a comprehensive summary:
+    return `Analyze this YouTube video and create an informative summary:
 
 Video Details:
 - Title: ${metadata.title}
@@ -261,36 +299,83 @@ Video Details:
 - Views: ${metadata.views}
 
 Transcript:
-${transcript.text.substring(0, 4000)} ${transcript.text.length > 4000 ? '...' : ''}
+${transcript.text.substring(0, 3000)} ${transcript.text.length > 3000 ? '...' : ''}
 
-Please provide a JSON response with:
-1. quickSummary: 3 key bullet points (max 15 words each), an impactful quote (max 25 words), and confidence score
-2. detailedSummary: 2-3 paragraphs, key topics with timestamps, and main takeaways
+Create a JSON response with:
+1. quickSummary: 3 specific bullet points (15-20 words each), impactful quote (15-20 words), confidence score
+2. detailedSummary: 2 informative paragraphs, key topics with timestamps, main takeaways
 
+Be specific and avoid generic statements. Focus on actual content from the video.
 Format as JSON:
 {
   "quickSummary": {
-    "bullets": ["point 1", "point 2", "point 3"],
-    "quote": "impactful quote from the video",
+    "bullets": ["specific point 1 (15-20 words)", "specific point 2 (15-20 words)", "specific point 3 (15-20 words)"],
+    "quote": "memorable quote or key insight from video (15-20 words)",
     "confidence": 0.95,
     "duration": "${metadata.duration}"
   },
   "detailedSummary": {
-    "paragraphs": ["paragraph 1", "paragraph 2"],
+    "paragraphs": ["informative paragraph 1", "informative paragraph 2"],
     "keyTopics": [{"topic": "Topic Name", "timestamp": "MM:SS"}],
-    "takeaways": ["takeaway 1", "takeaway 2", "takeaway 3"]
+    "takeaways": ["specific takeaway 1", "specific takeaway 2"]
   }
 }`;
   }
 
+  getExtendedModePrompt(transcript, metadata) {
+    return `Create a comprehensive, detailed analysis of this YouTube video:
+
+Video Details:
+- Title: ${metadata.title}
+- Channel: ${metadata.channel}
+- Duration: ${metadata.duration}
+- Views: ${metadata.views}
+
+Full Transcript:
+${transcript.text.substring(0, 8000)} ${transcript.text.length > 8000 ? '...' : ''}
+
+Provide a detailed JSON response with:
+1. quickSummary: 3 comprehensive bullet points (20-25 words each), impactful quote (20-25 words)
+2. detailedSummary: 3-4 detailed paragraphs, 5-6 key topics with timestamps, 4-5 actionable takeaways
+
+Focus on depth, insights, practical applications, and specific examples from the video.
+
+Format as JSON:
+{
+  "quickSummary": {
+    "bullets": ["comprehensive point 1 (20-25 words)", "comprehensive point 2 (20-25 words)", "comprehensive point 3 (20-25 words)"],
+    "quote": "most impactful quote or insight from the video (20-25 words)",
+    "confidence": 0.95,
+    "duration": "${metadata.duration}"
+  },
+  "detailedSummary": {
+    "paragraphs": ["detailed paragraph 1 (60-80 words)", "detailed paragraph 2 (60-80 words)", "detailed paragraph 3 (60-80 words)", "conclusion paragraph (40-60 words)"],
+    "keyTopics": [
+      {"topic": "Introduction and Context", "timestamp": "0:00"},
+      {"topic": "Main Topic 1", "timestamp": "2:30"},
+      {"topic": "Main Topic 2", "timestamp": "5:15"},
+      {"topic": "Key Examples/Case Studies", "timestamp": "8:00"},
+      {"topic": "Practical Applications", "timestamp": "12:30"},
+      {"topic": "Conclusions and Next Steps", "timestamp": "15:45"}
+    ],
+    "takeaways": [
+      "Specific actionable takeaway 1 with practical application",
+      "Specific actionable takeaway 2 with examples",
+      "Specific actionable takeaway 3 with implementation steps",
+      "Key insight or principle that viewers should remember",
+      "Next steps or resources for further learning"
+    ]
+  }
+}`;
+  }
   // Generate enhanced mock summary using transcript
-  generateEnhancedMockSummary(transcript, metadata, videoId) {
+  generateEnhancedMockSummary(transcript, metadata, videoId, extendedMode = false) {
     console.log('🎭 [Background] Generating enhanced mock summary with transcript');
     
     const transcriptPreview = transcript.text.substring(0, 200);
     const wordCount = transcript.text.split(' ').length;
     
-    return {
+    const baseSummary = {
       quickSummary: {
         bullets: [
           `${metadata.title.substring(0, 50)}${metadata.title.length > 50 ? '...' : ''}`,
@@ -304,8 +389,7 @@ Format as JSON:
       detailedSummary: {
         paragraphs: [
           `This video titled "${metadata.title}" was published by ${metadata.channel}. Based on the available transcript of ${wordCount} words, the content appears to cover substantial material.`,
-          `The transcript begins with: "${transcriptPreview}..." This suggests the video provides detailed information on the topic.`,
-          `With ${metadata.views} views and a duration of ${metadata.duration}, this appears to be engaging content that resonates with viewers.`
+          `The transcript begins with: "${transcriptPreview}..." This suggests the video provides detailed information on the topic.`
         ],
         keyTopics: [
           { topic: 'Introduction', timestamp: '0:00' },
@@ -316,18 +400,34 @@ Format as JSON:
         takeaways: [
           'Video contains substantial transcript content',
           'Content appears to be well-structured and informative',
-          'Popular video with significant viewer engagement',
-          'Transcript available for detailed analysis'
+          'Popular video with significant viewer engagement'
         ]
       }
     };
+    
+    if (extendedMode) {
+      baseSummary.detailedSummary.paragraphs.push(
+        `With ${metadata.views} views and a duration of ${metadata.duration}, this appears to be engaging content that resonates with viewers.`,
+        `The full transcript provides rich material for analysis, though AI processing is currently unavailable. The content structure suggests a well-organized presentation of information.`
+      );
+      baseSummary.detailedSummary.keyTopics.push(
+        { topic: 'Detailed Analysis', timestamp: '7:30' },
+        { topic: 'Advanced Topics', timestamp: '12:00' }
+      );
+      baseSummary.detailedSummary.takeaways.push(
+        'Transcript available for detailed analysis',
+        'Content structure indicates professional production quality'
+      );
+    }
+    
+    return baseSummary;
   }
 
   // Generate basic mock summary without transcript
-  generateBasicMockSummary(metadata, videoId) {
+  generateBasicMockSummary(metadata, videoId, extendedMode = false) {
     console.log('🎭 [Background] Generating basic mock summary without transcript');
     
-    return {
+    const baseSummary = {
       quickSummary: {
         bullets: [
           `Video: ${metadata.title.substring(0, 40)}${metadata.title.length > 40 ? '...' : ''}`,
@@ -341,8 +441,7 @@ Format as JSON:
       detailedSummary: {
         paragraphs: [
           `This video titled "${metadata.title}" is published by ${metadata.channel}. While we couldn't access the full transcript, we can provide insights based on the video metadata.`,
-          `The video has a duration of ${metadata.duration} and has received ${metadata.views} views, indicating viewer interest in the content.`,
-          `For a complete analysis with detailed insights, transcript access would be needed. Consider enabling captions on the video if available.`
+          `The video has a duration of ${metadata.duration} and has received ${metadata.views} views, indicating viewer interest in the content.`
         ],
         keyTopics: [
           { topic: 'Video Overview', timestamp: '0:00' },
@@ -350,18 +449,34 @@ Format as JSON:
         ],
         takeaways: [
           'Video metadata successfully extracted',
-          'Transcript access limited for this video',
-          'Consider enabling captions for better analysis'
+          'Transcript access limited for this video'
         ]
       }
     };
+    
+    if (extendedMode) {
+      baseSummary.detailedSummary.paragraphs.push(
+        `For a complete analysis with detailed insights, transcript access would be needed. Consider enabling captions on the video if available.`,
+        `Based on the video's popularity and metadata, this appears to be content worth watching for viewers interested in the topic.`
+      );
+      baseSummary.detailedSummary.keyTopics.push(
+        { topic: 'Estimated Content Structure', timestamp: '5:00' },
+        { topic: 'Viewer Engagement Analysis', timestamp: '8:00' }
+      );
+      baseSummary.detailedSummary.takeaways.push(
+        'Consider enabling captions for better analysis',
+        'Video popularity suggests valuable content for target audience'
+      );
+    }
+    
+    return baseSummary;
   }
 
   // Generate error summary
-  generateErrorSummary(errorMessage, videoId) {
+  generateErrorSummary(errorMessage, videoId, extendedMode = false) {
     console.log('❌ [Background] Generating error summary');
     
-    return {
+    const baseSummary = {
       quickSummary: {
         bullets: [
           'Unable to process video content',
@@ -375,19 +490,30 @@ Format as JSON:
       detailedSummary: {
         paragraphs: [
           `An error occurred while processing video ${videoId}: ${errorMessage}`,
-          'This could be due to network issues, API limitations, or video access restrictions.',
-          'Please check your internet connection and extension settings, then try again.'
+          'This could be due to network issues, API limitations, or video access restrictions.'
         ],
         keyTopics: [
           { topic: 'Error Occurred', timestamp: '0:00' }
         ],
         takeaways: [
           'Check internet connection',
-          'Verify extension settings',
-          'Try again with a different video'
+          'Verify extension settings'
         ]
       }
     };
+    
+    if (extendedMode) {
+      baseSummary.detailedSummary.paragraphs.push(
+        'Please check your internet connection and extension settings, then try again.',
+        'If the problem persists, this video may not be compatible with our analysis system.'
+      );
+      baseSummary.detailedSummary.takeaways.push(
+        'Try again with a different video',
+        'Contact support if errors persist across multiple videos'
+      );
+    }
+    
+    return baseSummary;
   }
 
   async extractVideoMetadata(videoId) {

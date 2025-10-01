@@ -19,13 +19,13 @@
     {
       "matches": ["*://*.youtube.com/*"],
       "js": [
+        "src/ui/ui-manager.js",
+        "src/ui/modal-manager.js",
         "src/utils/preloader.js",
         "src/utils/performance.js",
         "src/utils/cache.js",
         "src/api/youtube.js",
         "src/ai/summarizer.js",
-        "src/ui/tooltip.js",
-        "src/ui/modal.js",
         "src/content/youtube-injector.js"
       ],
       "css": ["src/styles/content.css"],
