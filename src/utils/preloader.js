@@ -15,31 +15,36 @@ class VideoPreloader {
   init() {
     console.log('🚀 [Preloader] Initializing aggressive preloading system');
     
-    // Wait for UI manager to be available
-    this.waitForUIManager();
-    
     this.setupIntersectionObserver();
-    this.startInitialPreload();
     this.setupScrollHandler();
+    
+    console.log('✅ [Preloader] Initialization complete');
   }
 
-  waitForUIManager() {
-    const checkUIManager = () => {
-      if (window.quickSightUIManager) {
-        this.uiManager = window.quickSightUIManager;
-        console.log('🚀 [Preloader] UI Manager connected');
-      } else {
-        setTimeout(checkUIManager, 100);
-      }
-    };
-    checkUIManager();
-  }
 
   scanForNewVideos() {
-    console.log('🚀 [Preloader] Scanning for new videos after UI injection');
-    setTimeout(() => {
-      this.scanAndPreloadVisibleVideos();
-    }, 100);
+    console.log('🚀 [Preloader] Scanning for new videos to preload');
+    
+    if (!window.quickSightUIManager) {
+      console.warn('⚠️ [Preloader] UI Manager not available, skipping scan');
+      return;
+    }
+    
+    // Get all registered videos from UI Manager
+    const registeredVideos = window.quickSightUIManager.getRegistryKeys();
+    console.log(`📊 [Preloader] Found ${registeredVideos.length} registered videos`);
+    
+    // Filter to videos that need preloading
+    const videosToPreload = registeredVideos.filter(videoId => {
+      const videoData = window.quickSightUIManager.getVideoData(videoId);
+      return videoData && videoData.status === 'not_ready' && !this.processingQueue.has(videoId);
+    });
+    
+    console.log(`🎯 [Preloader] Starting preload for ${videosToPreload.length} videos`);
+    
+    if (videosToPreload.length > 0) {
+      this.preloadVideos(videosToPreload);
+    }
   }
 
   setupIntersectionObserver() {
@@ -142,9 +147,9 @@ class VideoPreloader {
   }
 
   async preloadVideos(videos) {
-    const uncachedVideos = videos.filter(video => 
-      !this.cache.has(video.videoId) && 
-      !this.processingQueue.has(video.videoId)
+    const uncachedVideos = videoIds.filter(videoId => 
+      !this.cache.has(videoId) && 
+      !this.processingQueue.has(videoId)
     );
 
     if (uncachedVideos.length === 0) {
@@ -155,9 +160,9 @@ class VideoPreloader {
     console.log(`🎯 [Preloader] Preloading ${uncachedVideos.length} uncached videos`);
 
     // Add to processing queue
-    uncachedVideos.forEach(video => {
-      this.processingQueue.add(video.videoId);
-      this.queueRequest(video);
+    uncachedVideos.forEach(videoId => {
+      this.processingQueue.add(videoId);
+      this.queueRequest({ videoId, priority: 100 }); // Default priority
     });
 
     this.processRequestQueue();
@@ -206,8 +211,8 @@ class VideoPreloader {
     console.log(`⚡ [Preloader] Processing video: ${request.videoId}`);
     
     // Notify UI that we're loading
-    if (this.uiManager) {
-      this.uiManager.notifyVideoLoading(request.videoId);
+    if (window.quickSightUIManager) {
+      window.quickSightUIManager.updateVideoStatus(request.videoId, 'loading');
     }
 
     try {
@@ -215,7 +220,7 @@ class VideoPreloader {
       const response = await chrome.runtime.sendMessage({
         action: 'getVideoSummary',
         videoId: request.videoId,
-        fastMode: true, // Use fast AI model for preloading
+        fastMode: false, // Use quality model for better summaries
         priority: request.priority
       });
 
@@ -227,21 +232,13 @@ class VideoPreloader {
           ttl: 24 * 60 * 60 * 1000 // 24 hours
         });
 
-        // Also store in Chrome storage for persistence
-        await chrome.storage.local.set({
-          [`summary_${request.videoId}`]: {
-            summary: response.data,
-            timestamp: Date.now(),
-            ttl: 24 * 60 * 60 * 1000
-          }
-        });
 
         const processingTime = Date.now() - startTime;
         console.log(`✅ [Preloader] Cached summary for ${request.videoId} in ${processingTime}ms`);
 
         // Notify UI that summary is ready
-        if (this.uiManager) {
-          this.uiManager.notifyVideoReady(request.videoId, response.data);
+        if (window.quickSightUIManager) {
+          window.quickSightUIManager.updateVideoStatus(request.videoId, 'ready', response.data);
         }
 
         // Manage cache size
@@ -250,16 +247,16 @@ class VideoPreloader {
         console.warn(`⚠️ [Preloader] Failed to get summary for ${request.videoId}:`, response.error);
         
         // Notify UI of error
-        if (this.uiManager) {
-          this.uiManager.notifyVideoError(request.videoId);
+        if (window.quickSightUIManager) {
+          window.quickSightUIManager.updateVideoStatus(request.videoId, 'error');
         }
       }
     } catch (error) {
       console.error(`❌ [Preloader] Error processing ${request.videoId}:`, error);
       
       // Notify UI of error
-      if (this.uiManager) {
-        this.uiManager.notifyVideoError(request.videoId);
+      if (window.quickSightUIManager) {
+        window.quickSightUIManager.updateVideoStatus(request.videoId, 'error');
       }
     }
   }
