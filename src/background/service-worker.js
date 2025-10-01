@@ -55,8 +55,7 @@ class QuickSightBackground {
     try {
       switch (request.action) {
         case 'getVideoSummary':
-          const isFastMode = request.fastMode || false;
-          console.log(`🎯 [Background] Processing ${isFastMode ? 'FAST' : 'NORMAL'} summary for: ${request.videoId}`);
+          console.log(`🎯 [Background] Processing summary for: ${request.videoId}`);
           
           // Check for pending request to prevent duplicates
           const pendingKey = `summary_${request.videoId}`;
@@ -72,13 +71,13 @@ class QuickSightBackground {
           const cacheKey = `bg_summary_${request.videoId}`;
           if (this.cache.has(cacheKey)) {
             console.log(`💾 [Background] Using background cache for: ${request.videoId}`);
-            const cached = this.cache.get(cacheKey);
+            const cached = this.cache.get(cacheKey).data;
             sendResponse({ success: true, data: cached, cached: true });
             return;
           }
           
           // Create pending promise to prevent duplicates
-          const processingPromise = this.processVideoSummary(request.videoId, isFastMode);
+          const processingPromise = this.processVideoSummary(request.videoId, false, false);
           this.pendingRequests.set(pendingKey, processingPromise);
           
           const summary = await processingPromise;
@@ -87,7 +86,11 @@ class QuickSightBackground {
           this.pendingRequests.delete(pendingKey);
           
           // Cache in background for faster subsequent requests
-          this.addToCache(cacheKey, summary);
+          this.cache.set(cacheKey, {
+            data: summary,
+            timestamp: Date.now(),
+            ttl: 3600000 // 1 hour
+          });
           console.log(`💾 [Background] Cached summary in background cache`);
           
           const processingTime = Date.now() - startTime;
