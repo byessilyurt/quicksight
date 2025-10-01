@@ -5,7 +5,11 @@ class QuickSightTooltip {
     this.currentTarget = null;
     this.showTimeout = null;
     this.hideTimeout = null;
+    this.debounceTimeout = null;
     this.isVisible = false;
+    this.isHoveringTooltip = false;
+    this.isHoveringVideo = false;
+    this.activeEventListeners = new Map(); // Track event listeners for cleanup
     this.settings = {
       delay: 200,
       fadeSpeed: 150,
@@ -63,32 +67,64 @@ class QuickSightTooltip {
 
   bindEvents() {
     // Handle detailed view button click
-    this.tooltip.addEventListener('click', (e) => {
+    const tooltipClickHandler = (e) => {
       if (e.target.closest('.view-detailed-btn')) {
         e.preventDefault();
         e.stopPropagation();
         this.openDetailedModal();
       }
-    });
+    };
+    this.tooltip.addEventListener('click', tooltipClickHandler);
+    this.activeEventListeners.set('tooltip-click', { element: this.tooltip, event: 'click', handler: tooltipClickHandler });
 
     // Hide tooltip when clicking outside
-    document.addEventListener('click', (e) => {
+    const documentClickHandler = (e) => {
       if (!e.target.closest('.quicksight-tooltip') && !e.target.closest('[data-quicksight-video]')) {
         this.hide();
       }
-    });
+    };
+    document.addEventListener('click', documentClickHandler);
+    this.activeEventListeners.set('document-click', { element: document, event: 'click', handler: documentClickHandler });
 
     // Keyboard accessibility
-    document.addEventListener('keydown', (e) => {
+    const keydownHandler = (e) => {
       if (e.key === 'Escape' && this.isVisible) {
         this.hide();
       }
-    });
+    };
+    document.addEventListener('keydown', keydownHandler);
+    this.activeEventListeners.set('document-keydown', { element: document, event: 'keydown', handler: keydownHandler });
+
+    // Tooltip hover handlers
+    const tooltipMouseEnter = () => {
+      this.isHoveringTooltip = true;
+      clearTimeout(this.hideTimeout);
+    };
+    
+    const tooltipMouseLeave = () => {
+      this.isHoveringTooltip = false;
+      this.scheduleHide();
+    };
+    
+    this.tooltip.addEventListener('mouseenter', tooltipMouseEnter);
+    this.tooltip.addEventListener('mouseleave', tooltipMouseLeave);
+    this.activeEventListeners.set('tooltip-mouseenter', { element: this.tooltip, event: 'mouseenter', handler: tooltipMouseEnter });
+    this.activeEventListeners.set('tooltip-mouseleave', { element: this.tooltip, event: 'mouseleave', handler: tooltipMouseLeave });
   }
 
   async show(element, videoId, position) {
+    // Debounce rapid show requests
+    clearTimeout(this.debounceTimeout);
+    
+    this.debounceTimeout = setTimeout(async () => {
+      await this.showInternal(element, videoId, position);
+    }, 50); // 50ms debounce
+  }
+
+  async showInternal(element, videoId, position) {
     this.currentTarget = element;
     this.currentVideoId = videoId;
+    this.isHoveringVideo = true;
     
     // Clear any existing timeouts
     clearTimeout(this.showTimeout);
@@ -287,10 +323,26 @@ class QuickSightTooltip {
   }
 
   hide() {
+    this.isHoveringVideo = false;
+    this.scheduleHide();
+  }
+
+  scheduleHide() {
+    // Only hide if not hovering over video or tooltip
+    if (!this.isHoveringVideo && !this.isHoveringTooltip) {
+      clearTimeout(this.hideTimeout);
+      this.hideTimeout = setTimeout(() => {
+        this.hideInternal();
+      }, 100); // 100ms delay for smooth UX
+    }
+  }
+
+  hideInternal() {
     if (!this.isVisible) return;
 
     clearTimeout(this.showTimeout);
     clearTimeout(this.hideTimeout);
+    clearTimeout(this.debounceTimeout);
 
     this.tooltip.classList.remove('visible');
     this.tooltip.setAttribute('aria-hidden', 'true');
@@ -298,6 +350,8 @@ class QuickSightTooltip {
     this.currentTarget = null;
     this.currentVideoId = null;
     this.currentDetailedSummary = null;
+    this.isHoveringVideo = false;
+    this.isHoveringTooltip = false;
   }
 
   openDetailedModal() {
@@ -334,11 +388,21 @@ class QuickSightTooltip {
   }
 
   destroy() {
+    // Clean up all event listeners
+    for (const [key, { element, event, handler }] of this.activeEventListeners) {
+      element.removeEventListener(event, handler);
+      console.log(`🧹 [Tooltip] Cleaned up event listener: ${key}`);
+    }
+    this.activeEventListeners.clear();
+    
+    // Clear all timeouts
+    clearTimeout(this.showTimeout);
+    clearTimeout(this.hideTimeout);
+    clearTimeout(this.debounceTimeout);
+    
     if (this.tooltip && this.tooltip.parentNode) {
       this.tooltip.parentNode.removeChild(this.tooltip);
     }
-    clearTimeout(this.showTimeout);
-    clearTimeout(this.hideTimeout);
   }
 }
 

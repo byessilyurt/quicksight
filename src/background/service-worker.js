@@ -2,6 +2,8 @@
 class QuickSightBackground {
   constructor() {
     this.cache = new Map();
+    this.pendingRequests = new Map(); // Prevent duplicate requests
+    this.maxCacheSize = 100;
     this.init();
   }
 
@@ -57,6 +59,16 @@ class QuickSightBackground {
         case 'getVideoSummary':
           console.log('🎯 [Background] Processing getVideoSummary for:', request.videoId);
           
+          // Check for pending request to prevent duplicates
+          const pendingKey = `summary_${request.videoId}`;
+          if (this.pendingRequests.has(pendingKey)) {
+            console.log(`⏳ [Background] Request already pending for: ${request.videoId}`);
+            const pendingPromise = this.pendingRequests.get(pendingKey);
+            const result = await pendingPromise;
+            sendResponse({ success: true, data: result, cached: true });
+            return;
+          }
+
           // Check if we have this in our background cache first
           const cacheKey = `bg_summary_${request.videoId}`;
           if (this.cache.has(cacheKey)) {
@@ -66,10 +78,17 @@ class QuickSightBackground {
             return;
           }
           
-          const summary = await this.testVideoProcessing(request.videoId);
+          // Create pending promise to prevent duplicates
+          const processingPromise = this.testVideoProcessing(request.videoId);
+          this.pendingRequests.set(pendingKey, processingPromise);
+          
+          const summary = await processingPromise;
+          
+          // Remove from pending and add to cache
+          this.pendingRequests.delete(pendingKey);
           
           // Cache in background for faster subsequent requests
-          this.cache.set(cacheKey, summary);
+          this.addToCache(cacheKey, summary);
           console.log(`💾 [Background] Cached summary in background cache`);
           
           const processingTime = Date.now() - startTime;
@@ -94,6 +113,34 @@ class QuickSightBackground {
     }
   }
 
+  addToCache(key, value) {
+    // Implement LRU eviction if cache is full
+    if (this.cache.size >= this.maxCacheSize) {
+      const firstKey = this.cache.keys().next().value;
+      this.cache.delete(firstKey);
+      console.log(`🗑️ [Background] Evicted cache entry: ${firstKey}`);
+    }
+    
+    this.cache.set(key, {
+      data: value,
+      timestamp: Date.now(),
+      ttl: 3600000 // 1 hour
+    });
+  }
+
+  getCachedData(key) {
+    const cached = this.cache.get(key);
+    if (!cached) return null;
+    
+    // Check if expired
+    if (Date.now() - cached.timestamp > cached.ttl) {
+      this.cache.delete(key);
+      console.log(`⏰ [Background] Cache entry expired: ${key}`);
+      return null;
+    }
+    
+    return cached.data;
+  }
   async testVideoProcessing(videoId) {
     console.log('🔍 [Background] === TESTING VIDEO DATA EXTRACTION ===');
     console.log('📹 [Background] Video ID:', videoId);

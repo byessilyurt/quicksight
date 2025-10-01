@@ -108,31 +108,92 @@ class QuickSightPopup {
 
   async loadSettings() {
     try {
-      const stored = await chrome.storage.sync.get(Object.keys(this.settings));
+      // Use local storage for sensitive data like API keys
+      const sensitiveKeys = ['apiKey'];
+      const regularKeys = Object.keys(this.settings).filter(key => !sensitiveKeys.includes(key));
+      
+      const [sensitiveData, regularData] = await Promise.all([
+        chrome.storage.local.get(sensitiveKeys),
+        chrome.storage.sync.get(regularKeys)
+      ]);
+      
+      const stored = { ...regularData, ...sensitiveData };
       this.settings = { ...this.settings, ...stored };
+      
+      console.log('✅ [Popup] Settings loaded successfully');
     } catch (error) {
       console.error('Failed to load settings:', error);
-      this.showToast('Failed to load settings', 'error');
+      this.showToast(`Failed to load settings: ${error.message}`, 'error');
+      
+      // Use default settings on error
+      this.settings = {
+        enabled: true,
+        aiProvider: 'openai',
+        apiKey: '',
+        maxCacheSize: 100,
+        preloadCount: 3,
+        hoverDelay: 200
+      };
     }
   }
 
   async updateSetting(key, value) {
     try {
       this.settings[key] = value;
-      await chrome.storage.sync.set({ [key]: value });
+      
+      // Store API key in local storage for security
+      const storage = key === 'apiKey' ? chrome.storage.local : chrome.storage.sync;
+      await storage.set({ [key]: value });
+      
+      console.log(`✅ [Popup] Setting '${key}' saved successfully`);
       
       // Send message to content script if needed
       if (key === 'enabled') {
-        this.notifyContentScript('toggleEnabled', { enabled: value });
+        await this.notifyContentScript('toggleEnabled', { enabled: value });
       }
       
-      this.showToast('Settings saved');
+      // Validate API key if it's being updated
+      if (key === 'apiKey' && value) {
+        await this.validateApiKey(value);
+      }
+      
+      this.showToast('Settings saved successfully');
     } catch (error) {
       console.error('Failed to save setting:', error);
-      this.showToast('Failed to save settings', 'error');
+      this.showToast(`Failed to save ${key}: ${error.message}`, 'error');
+      
+      // Revert setting on error
+      const element = document.getElementById(key === 'enabled' ? 'enabledToggle' : key);
+      if (element) {
+        if (element.type === 'checkbox') {
+          element.checked = !value;
+        } else {
+          element.value = this.settings[key];
+        }
+      }
     }
   }
 
+  async validateApiKey(apiKey) {
+    try {
+      console.log('🔑 [Popup] Validating API key...');
+      
+      const response = await chrome.runtime.sendMessage({
+        action: 'testOpenAI'
+      });
+      
+      if (response.success) {
+        this.showToast('API key validated successfully', 'success');
+        console.log('✅ [Popup] API key validation successful');
+      } else {
+        this.showToast(`API key validation failed: ${response.error}`, 'error');
+        console.error('❌ [Popup] API key validation failed:', response.error);
+      }
+    } catch (error) {
+      console.error('❌ [Popup] API key validation error:', error);
+      this.showToast('Could not validate API key', 'warning');
+    }
+  }
   updateUI() {
     this.elements.enabledToggle.checked = this.settings.enabled;
     this.elements.aiProvider.value = this.settings.aiProvider;
@@ -479,10 +540,14 @@ ${JSON.stringify(issueData, null, 2)}`;
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tab && tab.url.includes('youtube.com')) {
-        chrome.tabs.sendMessage(tab.id, { action, ...data });
+        await chrome.tabs.sendMessage(tab.id, { action, ...data });
+        console.log(`📤 [Popup] Message sent to content script: ${action}`);
+      } else {
+        console.log('ℹ️ [Popup] No active YouTube tab found');
       }
     } catch (error) {
-      console.log('Content script notification failed (tab may not be YouTube):', error);
+      console.warn('⚠️ [Popup] Content script notification failed:', error.message);
+      // Don't show error toast for this as it's expected when not on YouTube
     }
   }
 
