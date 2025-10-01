@@ -19,6 +19,7 @@
     {
       "matches": ["*://*.youtube.com/*"],
       "js": [
+        "src/utils/preloader.js",
         "src/utils/performance.js",
         "src/utils/cache.js",
         "src/api/youtube.js",

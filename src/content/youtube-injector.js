@@ -34,7 +34,10 @@ class YouTubeInjector {
       // Initialize components
       this.tooltip = new window.QuickSightTooltip();
       this.modal = new window.QuickSightModal();
-      this.performanceOptimizer = new window.QuickSightPerformance();
+      
+      // Initialize aggressive preloader for instant hover responses
+      window.videoPreloader = new window.VideoPreloader();
+      console.log('⚡ [Injector] Aggressive preloader initialized');
 
       // Set up observers
       this.setupPageObserver();

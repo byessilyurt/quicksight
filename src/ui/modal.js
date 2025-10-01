@@ -111,23 +111,38 @@ class QuickSightModal {
   }
 
   bindEvents() {
-    // Close button
-    this.modal.querySelector('.modal-close').addEventListener('click', () => {
-      this.hide();
-    });
-
-    // Overlay click to close
-    this.overlay.addEventListener('click', (e) => {
-      if (e.target === this.overlay) {
-        this.hide();
+    // Use event delegation for robust event handling
+    document.addEventListener('click', (e) => {
+      // Handle "View Details" button clicks from tooltips
+      if (e.target.closest('.view-detailed-btn')) {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('🎯 [Modal] View Details button clicked');
+        this.handleViewDetailsClick(e.target.closest('.view-detailed-btn'));
+        return;
       }
-    });
 
-    // Action buttons
-    this.modal.querySelector('.modal-actions').addEventListener('click', (e) => {
-      const action = e.target.closest('[data-action]')?.dataset.action;
-      if (action) {
+      // Handle modal close button
+      if (e.target.closest('.modal-close')) {
+        console.log('❌ [Modal] Close button clicked');
+        this.hide();
+        return;
+      }
+
+      // Handle overlay click to close
+      if (e.target.classList.contains('quicksight-modal-overlay')) {
+        console.log('🖱️ [Modal] Overlay clicked - closing modal');
+        this.hide();
+        return;
+      }
+
+      // Handle action buttons
+      const actionBtn = e.target.closest('[data-action]');
+      if (actionBtn && this.isVisible) {
+        const action = actionBtn.dataset.action;
+        console.log(`🎬 [Modal] Action button clicked: ${action}`);
         this.handleAction(action);
+        return;
       }
     });
 
@@ -146,7 +161,59 @@ class QuickSightModal {
     });
   }
 
+  handleViewDetailsClick(button) {
+    console.log('🔍 [Modal] Processing View Details click');
+    
+    // Get video data from the tooltip or button context
+    const tooltip = button.closest('.quicksight-tooltip');
+    if (!tooltip) {
+      console.error('❌ [Modal] Could not find parent tooltip');
+      return;
+    }
+
+    // Get video ID from tooltip's current context
+    const videoId = window.currentTooltipVideoId;
+    const detailedSummary = window.currentTooltipDetailedSummary;
+    
+    if (!videoId || !detailedSummary) {
+      console.error('❌ [Modal] Missing video data for modal', { videoId, detailedSummary });
+      return;
+    }
+
+    // Get metadata from the video element
+    const videoElement = document.querySelector(`[data-quicksight-video="${videoId}"]`);
+    const metadata = this.extractMetadataFromElement(videoElement, videoId);
+    
+    console.log('✅ [Modal] Opening modal with data:', { videoId, metadata });
+    this.show(detailedSummary, metadata);
+  }
+
+  extractMetadataFromElement(element, videoId) {
+    if (!element) {
+      return {
+        id: videoId,
+        title: 'Video Details',
+        channel: 'Unknown Channel',
+        views: '',
+        uploadDate: '',
+        duration: '',
+        thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`
+      };
+    }
+
+    return {
+      id: videoId,
+      title: element.querySelector('#video-title, .video-title, h3 a')?.textContent?.trim() || 'Unknown Video',
+      channel: element.querySelector('#channel-name, .channel-name, #owner-name')?.textContent?.trim() || 'Unknown Channel',
+      views: element.querySelector('#metadata-line span:first-child, .video-view-count')?.textContent?.trim() || '',
+      uploadDate: element.querySelector('#metadata-line span:last-child, .video-upload-date')?.textContent?.trim() || '',
+      duration: element.querySelector('.ytd-thumbnail-overlay-time-status-renderer, #overlays .badge')?.textContent?.trim() || '',
+      thumbnail: element.querySelector('img')?.src || `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`
+    };
+  }
+
   show(detailedSummary, metadata) {
+    console.log('🎬 [Modal] Showing modal for:', metadata.title);
     this.currentMetadata = metadata;
     this.populateContent(detailedSummary, metadata);
     

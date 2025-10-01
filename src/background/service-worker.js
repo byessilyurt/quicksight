@@ -50,19 +50,18 @@ class QuickSightBackground {
 
   async handleMessage(request, sender, sendResponse) {
     const startTime = Date.now();
-    console.log(`📨 [Background] === MESSAGE RECEIVED ===`);
-    console.log(`📨 [Background] Action: ${request.action}`);
-    console.log(`📨 [Background] Video ID: ${request.videoId || 'N/A'}`);
+    console.log(`📨 [Background] Message: ${request.action} for ${request.videoId || 'N/A'}`);
     
     try {
       switch (request.action) {
         case 'getVideoSummary':
-          console.log('🎯 [Background] Processing getVideoSummary for:', request.videoId);
+          const isFastMode = request.fastMode || false;
+          console.log(`🎯 [Background] Processing ${isFastMode ? 'FAST' : 'NORMAL'} summary for: ${request.videoId}`);
           
           // Check for pending request to prevent duplicates
           const pendingKey = `summary_${request.videoId}`;
           if (this.pendingRequests.has(pendingKey)) {
-            console.log(`⏳ [Background] Request already pending for: ${request.videoId}`);
+            console.log(`⏳ [Background] Deduplicating request for: ${request.videoId}`);
             const pendingPromise = this.pendingRequests.get(pendingKey);
             const result = await pendingPromise;
             sendResponse({ success: true, data: result, cached: true });
@@ -79,7 +78,7 @@ class QuickSightBackground {
           }
           
           // Create pending promise to prevent duplicates
-          const processingPromise = this.testVideoProcessing(request.videoId);
+          const processingPromise = this.processVideoSummary(request.videoId, isFastMode);
           this.pendingRequests.set(pendingKey, processingPromise);
           
           const summary = await processingPromise;
@@ -141,37 +140,27 @@ class QuickSightBackground {
     
     return cached.data;
   }
-  async testVideoProcessing(videoId) {
-    console.log('🔍 [Background] === TESTING VIDEO DATA EXTRACTION ===');
-    console.log('📹 [Background] Video ID:', videoId);
+  async processVideoSummary(videoId, fastMode = false) {
+    console.log(`🔍 [Background] Processing video summary (${fastMode ? 'FAST' : 'NORMAL'}): ${videoId}`);
 
     try {
-      // Step 1: Test video metadata extraction
-      console.log('📊 [Background] Step 1: Extracting video metadata...');
+      // Step 1: Extract video metadata
       const metadata = await this.extractVideoMetadata(videoId);
-      console.log('📊 [Background] Extracted metadata:', metadata);
 
-      // Step 2: Test transcript extraction
-      console.log('📝 [Background] Step 2: Testing transcript extraction...');
+      // Step 2: Extract transcript
       const transcript = await this.testTranscriptExtraction(videoId);
-      console.log('📝 [Background] Transcript result:', transcript);
 
-      // Step 3: Test OpenAI API (if API key is configured)
-      console.log('🤖 [Background] Step 3: Testing OpenAI API...');
+      // Step 3: Check OpenAI API availability
       const openaiTest = await this.testOpenAIConnection();
-      console.log('🤖 [Background] OpenAI test result:', openaiTest);
 
-      // Step 4: Generate real summary if we have transcript and API key
-      console.log('🎯 [Background] Step 4: Generating AI summary...');
+      // Step 4: Generate summary based on available data
+      console.log(`🎯 [Background] Generating ${fastMode ? 'fast' : 'detailed'} AI summary...`);
       
       if (transcript.available && openaiTest.success) {
-        console.log('✅ [Background] Both transcript and OpenAI available - generating real summary');
-        return await this.generateRealSummary(transcript, metadata, videoId);
+        return await this.generateRealSummary(transcript, metadata, videoId, fastMode);
       } else if (transcript.available) {
-        console.log('⚠️ [Background] Transcript available but no OpenAI - using enhanced mock');
         return this.generateEnhancedMockSummary(transcript, metadata, videoId);
       } else {
-        console.log('⚠️ [Background] No transcript available - using basic mock');
         return this.generateBasicMockSummary(metadata, videoId);
       }
     } catch (error) {
@@ -181,15 +170,89 @@ class QuickSightBackground {
   }
 
   // Generate real AI summary using OpenAI
-  async generateRealSummary(transcript, metadata, videoId) {
-    console.log('🤖 [Background] === GENERATING REAL AI SUMMARY ===');
-    console.log('📝 [Background] Transcript length:', transcript.length, 'characters');
-    console.log('📊 [Background] Video metadata:', metadata);
+  async generateRealSummary(transcript, metadata, videoId, fastMode = false) {
+    console.log(`🤖 [Background] Generating ${fastMode ? 'FAST' : 'DETAILED'} AI summary`);
     
     try {
       const settings = await chrome.storage.sync.get(['apiKey']);
       
-      const prompt = `Analyze this YouTube video and create a comprehensive summary:
+      // Use different prompts for fast vs detailed mode
+      const prompt = fastMode ? 
+        this.getFastModePrompt(transcript, metadata) : 
+        this.getDetailedModePrompt(transcript, metadata);
+
+      console.log(`🌐 [Background] Sending ${fastMode ? 'fast' : 'detailed'} request to OpenAI...`);
+      
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${settings.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: fastMode ? 'gpt-4o-mini' : 'gpt-4o-mini', // Use fast model for both for now
+          messages: [
+            { 
+              role: 'system', 
+              content: fastMode ? 
+                'You are a speed-optimized video summarizer. Create ultra-concise summaries in under 30 tokens.' :
+                'You are an expert video content analyst. Create accurate, engaging summaries.'
+            },
+            { role: 'user', content: prompt }
+          ],
+          max_tokens: fastMode ? 150 : 1000, // Much smaller for fast mode
+          temperature: 0.3,
+          response_format: { type: 'json_object' }
+        })
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(`OpenAI API error: ${error.error?.message || response.statusText}`);
+      }
+      
+      const data = await response.json();
+      console.log(`✅ [Background] OpenAI ${fastMode ? 'fast' : 'detailed'} response received`);
+      
+      const content = data.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('No content received from OpenAI');
+      }
+      
+      const summary = JSON.parse(content);
+      return summary;
+      
+    } catch (error) {
+      console.error(`❌ [Background] ${fastMode ? 'Fast' : 'Detailed'} summary generation failed:`, error);
+      return this.generateEnhancedMockSummary(transcript, metadata, videoId);
+    }
+  }
+
+  getFastModePrompt(transcript, metadata) {
+    return `Create ultra-fast summary for preloading:
+
+Video: ${metadata.title}
+Channel: ${metadata.channel}
+Transcript: ${transcript.text.substring(0, 1000)}...
+
+JSON format (max 30 tokens total):
+{
+  "quickSummary": {
+    "bullets": ["point1", "point2", "point3"],
+    "quote": "key quote",
+    "confidence": 0.9,
+    "duration": "${metadata.duration}"
+  },
+  "detailedSummary": {
+    "paragraphs": ["brief summary"],
+    "keyTopics": [{"topic": "Main topic", "timestamp": "0:00"}],
+    "takeaways": ["key takeaway"]
+  }
+}`;
+  }
+
+  getDetailedModePrompt(transcript, metadata) {
+    return `Analyze this YouTube video and create a comprehensive summary:
 
 Video Details:
 - Title: ${metadata.title}
@@ -218,59 +281,6 @@ Format as JSON:
     "takeaways": ["takeaway 1", "takeaway 2", "takeaway 3"]
   }
 }`;
-
-      console.log('🌐 [Background] Sending request to OpenAI...');
-      console.log('📝 [Background] Prompt length:', prompt.length, 'characters');
-      
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${settings.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            { 
-              role: 'system', 
-              content: 'You are an expert video content analyst. Create accurate, engaging summaries that capture the essence of video content.' 
-            },
-            { role: 'user', content: prompt }
-          ],
-          max_tokens: 1000,
-          temperature: 0.3,
-          response_format: { type: 'json_object' }
-        })
-      });
-      
-      console.log('📊 [Background] OpenAI response status:', response.status);
-      
-      if (!response.ok) {
-        const error = await response.json();
-        console.error('❌ [Background] OpenAI API error:', error);
-        throw new Error(`OpenAI API error: ${error.error?.message || response.statusText}`);
-      }
-      
-      const data = await response.json();
-      console.log('✅ [Background] OpenAI response received');
-      console.log('💰 [Background] Token usage:', data.usage);
-      
-      const content = data.choices[0]?.message?.content;
-      if (!content) {
-        throw new Error('No content received from OpenAI');
-      }
-      
-      console.log('📝 [Background] AI response content:', content.substring(0, 300));
-      
-      const summary = JSON.parse(content);
-      console.log('✅ [Background] Successfully generated real AI summary');
-      
-      return summary;
-      
-    } catch (error) {
-      console.error('❌ [Background] Real summary generation failed:', error);
-      return this.generateEnhancedMockSummary(transcript, metadata, videoId);
-    }
   }
 
   // Generate enhanced mock summary using transcript

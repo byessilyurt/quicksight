@@ -155,22 +155,17 @@ class QuickSightTooltip {
 
   async getSummary(videoId) {
     console.log(`🎯 [Tooltip] Getting summary for video: ${videoId}`);
-    console.log(`🔍 [Tooltip] === STARTING VIDEO ANALYSIS ===`);
     
-    // Check cache first
-    const cacheKey = `summary_${videoId}`;
-    const cached = window.QuickSightCache?.get(cacheKey);
-    if (cached) {
-      console.log(`💾 [Tooltip] Using cached summary for: ${videoId}`);
-      // Return the cached value directly (it should already be the summary object)
-      return cached.value || cached;
+    // Check preloader cache first for instant response
+    if (window.videoPreloader) {
+      const cachedSummary = await window.videoPreloader.getCachedSummary(videoId);
+      if (cachedSummary) {
+        console.log(`⚡ [Tooltip] INSTANT response from preloader cache: ${videoId}`);
+        return cachedSummary;
+      }
     }
 
-    console.log(`🔄 [Tooltip] Requesting new summary for video: ${videoId}`);
-    console.log(`📤 [Tooltip] Sending message to background script...`);
-
-    // Add a test button for OpenAI (temporary)
-    this.testOpenAI();
+    console.log(`🔄 [Tooltip] Cache miss - requesting new summary for: ${videoId}`);
 
     // Request from background script
     return new Promise((resolve, reject) => {
@@ -187,41 +182,12 @@ class QuickSightTooltip {
         console.log(`📨 [Tooltip] Background script response for ${videoId}:`, response);
 
         if (response.success) {
-          // Cache the result
-          if (window.QuickSightCache) {
-            console.log(`💾 [Tooltip] Caching summary for ${videoId}`);
-            window.QuickSightCache.set(cacheKey, response.data);
-          }
           resolve(response.data);
         } else {
           console.error(`❌ [Tooltip] Background script error for ${videoId}:`, response.error);
           reject(new Error(response.error || 'Failed to generate summary'));
         }
       });
-    });
-  }
-
-  updateCacheStats(isHit) {
-    // Update performance metrics for cache hit/miss
-    if (window.QuickSightPerformance) {
-      if (isHit) {
-        window.QuickSightPerformance.recordCacheHit();
-      } else {
-        window.QuickSightPerformance.recordCacheMiss();
-      }
-    }
-  }
-
-  async testOpenAI() {
-    console.log('🧪 [Tooltip] Testing OpenAI connection...');
-    chrome.runtime.sendMessage({
-      action: 'testOpenAI'
-    }, (response) => {
-      if (response.success) {
-        console.log('✅ [Tooltip] OpenAI test result:', response.data);
-      } else {
-        console.error('❌ [Tooltip] OpenAI test failed:', response.error);
-      }
     });
   }
 
@@ -271,6 +237,10 @@ class QuickSightTooltip {
 
     // Store detailed summary for modal
     this.currentDetailedSummary = summary.detailedSummary || summary;
+    
+    // Make data globally accessible for modal
+    window.currentTooltipVideoId = this.currentVideoId;
+    window.currentTooltipDetailedSummary = this.currentDetailedSummary;
 
     // Show summary, hide loading
     this.tooltip.querySelector('.quicksight-loading').style.display = 'none';
